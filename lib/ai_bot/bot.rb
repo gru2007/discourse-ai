@@ -145,7 +145,7 @@ module DiscourseAi
           when DiscourseAi::AiBot::EntryPoint::GPT4_TURBO_ID
             "open_ai:gpt-4-turbo"
           when DiscourseAi::AiBot::EntryPoint::GPT3_5_TURBO_ID
-            "open_ai:gpt-3.5-turbo-16k"
+            "open_ai:gpt-3.5-turbo-0125"
           when DiscourseAi::AiBot::EntryPoint::MIXTRAL_ID
             if DiscourseAi::Completions::Endpoints::Vllm.correctly_configured?(
                  "mistralai/Mixtral-8x7B-Instruct-v0.1",
@@ -163,7 +163,7 @@ module DiscourseAi
           end
 
         if %w[open_ai:gpt-4 open_ai:gpt-4-turbo].include?(default_model) && prefer_low_cost
-          return "open_ai:gpt-3.5-turbo-16k"
+          return "open_ai:gpt-3.5-turbo-0125k"
         end
 
         default_model
