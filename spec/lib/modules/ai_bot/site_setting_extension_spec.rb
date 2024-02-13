@@ -9,13 +9,13 @@ describe DiscourseAi::AiBot::SiteSettingsExtension do
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::GPT3_5_TURBO_ID)).to eq(false)
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::CLAUDE_V2_ID)).to eq(false)
 
-    SiteSetting.ai_bot_enabled_chat_bots = "gpt-3.5-turbo"
+    SiteSetting.ai_bot_enabled_chat_bots = "gpt-3.5-turbo-0125"
 
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::GPT4_ID)).to eq(false)
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::GPT3_5_TURBO_ID)).to eq(true)
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::CLAUDE_V2_ID)).to eq(false)
 
-    SiteSetting.ai_bot_enabled_chat_bots = "gpt-3.5-turbo|claude-2"
+    SiteSetting.ai_bot_enabled_chat_bots = "gpt-3.5-turbo-0125|claude-2"
 
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::GPT4_ID)).to eq(false)
     expect(User.exists?(id: DiscourseAi::AiBot::EntryPoint::GPT3_5_TURBO_ID)).to eq(true)

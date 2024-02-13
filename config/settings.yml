@@ -294,10 +294,10 @@ discourse_ai:
   # Adding a new bot? Make sure to create a user for it on the seed file and update translations.
   ai_bot_enabled_chat_bots:
     type: list
-    default: "gpt-3.5-turbo"
+    default: "gpt-3.5-turbo-0125"
     client: true
     choices:
-      - gpt-3.5-turbo
+      - gpt-3.5-turbo-0125
       - gpt-4
       - gpt-4-turbo
       - claude-2

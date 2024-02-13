@@ -36,7 +36,7 @@ class ExplicitProviderBackwardsCompat < ActiveRecord::Migration[7.0]
     if !setting_value && feature_enabled
       # Enabled and using old default (gpt-3.5-turbo)
       DB.exec(
-        "UPDATE site_settings SET value='open_ai:gpt-3.5-turbo' WHERE name=:llm_setting",
+        "UPDATE site_settings SET value='open_ai:gpt-3.5-turbo-0125' WHERE name=:llm_setting",
         llm_setting: llm_setting_name,
       )
     elsif setting_value && !feature_enabled
@@ -52,7 +52,7 @@ class ExplicitProviderBackwardsCompat < ActiveRecord::Migration[7.0]
   end
 
   def append_provider(value)
-    open_ai_models = %w[gpt-3.5-turbo gpt-4 gpt-3.5-turbo-16k gpt-4-32k gpt-4-turbo]
+    open_ai_models = %w[gpt-3.5-turbo-0125 gpt-4 gpt-3.5-turbo-16k gpt-4-32k gpt-4-turbo]
     return "open_ai:#{value}" if open_ai_models.include?(value)
     return "google:#{value}" if value == "gemini-pro"
 

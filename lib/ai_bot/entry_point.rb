@@ -15,7 +15,7 @@ module DiscourseAi
 
       BOTS = [
         [GPT4_ID, "gpt4_bot", "gpt-4"],
-        [GPT3_5_TURBO_ID, "gpt3.5_bot", "gpt-3.5-turbo"],
+        [GPT3_5_TURBO_ID, "gpt3.5_bot", "gpt-3.5-turbo-0125"],
         [CLAUDE_V2_ID, "claude_bot", "claude-2"],
         [GPT4_TURBO_ID, "gpt4t_bot", "gpt-4-turbo"],
         [MIXTRAL_ID, "mixtral_bot", "mixtral-8x7B-Instruct-V0.1"],
@@ -27,7 +27,7 @@ module DiscourseAi
         case model_name
         in "gpt-4-turbo"
           GPT4_TURBO_ID
-        in "gpt-3.5-turbo"
+        in "gpt-3.5-turbo-0125"
           GPT3_5_TURBO_ID
         in "gpt-4"
           GPT4_ID

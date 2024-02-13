@@ -38,7 +38,7 @@ class FixLlmBackedSettingDefaults < ActiveRecord::Migration[7.0]
 
     if using_old_default && feature_enabled
       # Enabled and using old default (gpt-3.5-turbo)
-      DB.exec(<<~SQL, llm_setting: llm_setting_name, default: "open_ai:gpt-3.5-turbo")
+      DB.exec(<<~SQL, llm_setting: llm_setting_name, default: "open_ai:gpt-3.5-turbo-0125")
         INSERT INTO site_settings(name, data_type, value, created_at, updated_at)
         VALUES (:llm_setting, 1, :default, NOW(), NOW())
       SQL

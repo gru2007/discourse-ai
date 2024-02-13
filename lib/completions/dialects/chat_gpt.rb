@@ -7,7 +7,7 @@ module DiscourseAi
         class << self
           def can_translate?(model_name)
             %w[
-              gpt-3.5-turbo
+              gpt-3.5-turbo-0125
               gpt-4
               gpt-3.5-turbo-16k
               gpt-4-32k
