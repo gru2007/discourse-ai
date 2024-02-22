@@ -8,6 +8,8 @@ module DiscourseAi
       before_action :ensure_can_request_suggestions
       before_action :rate_limiter_performed!, except: %i[prompts]
 
+      include SecureUploadEndpointHelpers
+
       def suggest
         input = get_text_param!
 
@@ -105,6 +107,31 @@ module DiscourseAi
                           status: 502
       end
 
+      def caption_image
+        image_url = params[:image_url]
+        raise Discourse::InvalidParameters.new(:image_url) if !image_url
+
+        image = upload_from_full_url(image_url)
+        raise Discourse::NotFound if image.blank?
+        final_image_url = get_caption_url(image, image_url)
+
+        hijack do
+          caption =
+            DiscourseAi::AiHelper::Assistant.new.generate_image_caption(
+              final_image_url,
+              current_user,
+            )
+          render json: {
+                   caption:
+                     "#{caption} (#{I18n.t("discourse_ai.ai_helper.image_caption.attribution")})",
+                 },
+                 status: 200
+        end
+      rescue DiscourseAi::Completions::Endpoints::Base::CompletionFailed, Net::HTTPBadResponse
+        render_json_error I18n.t("discourse_ai.ai_helper.errors.completion_request_failed"),
+                          status: 502
+      end
+
       private
 
       def get_text_param!
@@ -120,14 +147,18 @@ module DiscourseAi
       end
 
       def ensure_can_request_suggestions
-        user_group_ids = current_user.group_ids
+        if !current_user.in_any_groups?(SiteSetting.ai_helper_allowed_groups_map)
+          raise Discourse::InvalidAccess
+        end
+      end
 
-        allowed =
-          SiteSetting.ai_helper_allowed_groups_map.any? do |group_id|
-            user_group_ids.include?(group_id)
-          end
+      def get_caption_url(image_upload, image_url)
+        if image_upload.secure?
+          check_secure_upload_permission(image_upload)
+          return Discourse.store.url_for(image_upload)
+        end
 
-        raise Discourse::InvalidAccess if !allowed
+        UrlHelper.absolute(image_url)
       end
     end
   end

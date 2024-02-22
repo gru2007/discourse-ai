@@ -46,7 +46,6 @@ discourse_ai:
     default: 60
     client: false
   ai_toxicity_groups_bypass:
-    client: true
     type: group_list
     list_type: compact
     default: "3" # 3: @staff
@@ -166,13 +165,18 @@ discourse_ai:
     default: ""
     hidden: true
   ai_vllm_api_key: ""
+  ai_llava_endpoint:
+    default: ""
+  ai_llava_endpoint_srv:
+    default: ""
+    hidden: true
+  ai_llava_api_key: ""
 
   composer_ai_helper_enabled:
     default: false
     client: true
     validator: "DiscourseAi::Configuration::LlmDependencyValidator"
   ai_helper_allowed_groups:
-    client: true
     type: group_list
     list_type: compact
     default: "3|14" # 3: @staff, 14: @trust_level_4
@@ -188,14 +192,12 @@ discourse_ai:
     enum: "DiscourseAi::Configuration::LlmEnumerator"
     validator: "DiscourseAi::Configuration::LlmValidator"
   ai_helper_custom_prompts_allowed_groups:
-    client: true
     type: group_list
     list_type: compact
     default: "3" # 3: @staff
     allow_any: false
     refresh: true
   post_ai_helper_allowed_groups:
-    client: true
     type: group_list
     list_type: compact
     default: "3|14" # 3: @staff, 14: @trust_level_4
@@ -222,6 +224,14 @@ discourse_ai:
     choices:
       - "suggestions"
       - "context_menu"
+      - "image_caption"
+  ai_helper_image_caption_model:
+    default: "llava"
+    type: enum
+    choices:
+      - "llava"
+      - "open_ai:gpt-4-vision-preview"
+    
 
   ai_embeddings_enabled:
     default: false
