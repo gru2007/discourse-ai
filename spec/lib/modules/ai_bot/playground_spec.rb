@@ -52,6 +52,15 @@ RSpec.describe DiscourseAi::AiBot::Playground do
     )
   end
 
+  describe "is_bot_user_id?" do
+    it "properly detects ALL bots as bot users" do
+      persona = Fabricate(:ai_persona, enabled: false)
+      persona.create_user!
+
+      expect(DiscourseAi::AiBot::Playground.is_bot_user_id?(persona.user_id)).to eq(true)
+    end
+  end
+
   describe "persona with user support" do
     before do
       Jobs.run_immediately!
@@ -403,7 +412,7 @@ RSpec.describe DiscourseAi::AiBot::Playground do
         )
       end
 
-      it "include replies generated from tools only once" do
+      it "include replies generated from tools" do
         custom_prompt = [
           [
             { args: { timezone: "Buenos Aires" }, time: "2023-12-14 17:24:00 -0300" }.to_json,
@@ -415,7 +424,7 @@ RSpec.describe DiscourseAi::AiBot::Playground do
             "time",
             "tool_call",
           ],
-          ["I replied this thanks to the time command", bot_user.username],
+          ["I replied", bot_user.username],
         ]
         PostCustomPrompt.create!(post: second_post, custom_prompt: custom_prompt)
         PostCustomPrompt.create!(post: first_post, custom_prompt: custom_prompt)
@@ -430,6 +439,7 @@ RSpec.describe DiscourseAi::AiBot::Playground do
             { type: :tool, id: "time", content: custom_prompt.first.first },
             { type: :tool_call, content: custom_prompt.second.first, id: "time" },
             { type: :tool, id: "time", content: custom_prompt.first.first },
+            { type: :model, content: "I replied" },
           ],
         )
       end
