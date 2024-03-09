@@ -36,7 +36,8 @@ module DiscourseAi
           def tool_preamble
             <<~TEXT
               In this environment you have access to a set of tools you can use to answer the user's question.
-              You may call them like this. Only invoke one function at a time and wait for the results before invoking another function:
+              You may call them like this.
+
               <function_calls>
               <invoke>
               <tool_name>$TOOL_NAME</tool_name>
@@ -47,10 +48,16 @@ module DiscourseAi
               </invoke>
               </function_calls>
 
-              if a parameter type is an array, return a JSON array of values. For example:
+              If a parameter type is an array, return a JSON array of values. For example:
               [1,"two",3.0]
 
-              Here are the tools available:
+              If you wish to call multiple function in one reply, wrap multiple <invoke>
+              block in a single <function_calls> block.
+
+              Always prefer to lead with tool calls, if you need to execute any.
+              Avoid all niceties prior to tool calls, Eg: "Let me look this up for you.." etc.
+
+              Here are the complete list of tools available:
             TEXT
           end
         end
@@ -69,7 +76,7 @@ module DiscourseAi
           (<<~TEXT).strip
             <function_results>
             <result>
-            <tool_name>#{message[:id]}</tool_name>
+            <tool_name>#{message[:name] || message[:id]}</tool_name>
             <json>
             #{message[:content]}
             </json>
@@ -91,7 +98,7 @@ module DiscourseAi
           (<<~TEXT).strip
             <function_calls>
             <invoke>
-            <tool_name>#{parsed[:name]}</tool_name>
+            <tool_name>#{message[:name] || parsed[:name]}</tool_name>
             #{parameters}</invoke>
             </function_calls>
           TEXT

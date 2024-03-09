@@ -122,6 +122,7 @@ module DiscourseAi
                 }
 
                 custom_context[:id] = message[1] if custom_context[:type] != :model
+                custom_context[:name] = message[3] if message[3]
 
                 result << custom_context
               end
@@ -276,6 +277,14 @@ module DiscourseAi
         publish_final_update(reply_post) if stream_reply
       end
 
+      def available_bot_usernames
+        @bot_usernames ||=
+          AiPersona
+            .joins(:user)
+            .pluck(:username)
+            .concat(DiscourseAi::AiBot::EntryPoint::BOTS.map(&:second))
+      end
+
       private
 
       def publish_final_update(reply_post)
@@ -347,10 +356,6 @@ module DiscourseAi
           max_backlog_size: 2,
           max_backlog_age: 60,
         )
-      end
-
-      def available_bot_usernames
-        @bot_usernames ||= DiscourseAi::AiBot::EntryPoint::BOTS.map(&:second)
       end
     end
   end

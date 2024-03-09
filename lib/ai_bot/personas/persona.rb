@@ -15,6 +15,7 @@ module DiscourseAi
               Personas::Creative => -6,
               Personas::DallE3 => -7,
               Personas::DiscourseHelper => -8,
+              Personas::GithubHelper => -9,
             }
           end
 
@@ -64,7 +65,11 @@ module DiscourseAi
               Tools::SettingContext,
               Tools::RandomPicker,
               Tools::DiscourseMetaSearch,
+              Tools::GithubFileContent,
+              Tools::GithubPullRequestDiff,
             ]
+
+            tools << Tools::GithubSearchCode if SiteSetting.ai_bot_github_access_token.present?
 
             tools << Tools::ListTags if SiteSetting.tagging_enabled
             tools << Tools::Image if SiteSetting.ai_stability_api_key.present?
@@ -138,10 +143,10 @@ module DiscourseAi
         def find_tool(parsed_function)
           function_id = parsed_function.at("tool_id")&.text
           function_name = parsed_function.at("tool_name")&.text
-          return false if function_name.nil?
+          return nil if function_name.nil?
 
           tool_klass = available_tools.find { |c| c.signature.dig(:name) == function_name }
-          return false if tool_klass.nil?
+          return nil if tool_klass.nil?
 
           arguments = {}
           tool_klass.signature[:parameters].to_a.each do |param|
@@ -162,7 +167,7 @@ module DiscourseAi
 
           tool_klass.new(
             arguments,
-            tool_call_id: function_id,
+            tool_call_id: function_id || function_name,
             persona_options: options[tool_klass].to_h,
           )
         end
