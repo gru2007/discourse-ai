@@ -140,10 +140,7 @@ Follow the provided writing composition instructions carefully and precisely ste
         prompt =
           DiscourseAi::Completions::Prompt.new(
             system_prompt,
-            messages: [
-              { type: :user, content: input },
-              { type: :model, content: "Here is the report I generated for you" },
-            ],
+            messages: [{ type: :user, content: input }],
           )
 
         result = +""
@@ -216,13 +213,16 @@ Follow the provided writing composition instructions carefully and precisely ste
       def translate_model(model)
         return "google:gemini-pro" if model == "gemini-pro"
         return "open_ai:#{model}" if model.start_with? "gpt"
-        return "anthropic:#{model}" if model.start_with? "claude-3"
 
-        if DiscourseAi::Completions::Endpoints::AwsBedrock.correctly_configured?("claude-2")
-          "aws_bedrock:#{model}"
-        else
-          "anthropic:#{model}"
+        if model.start_with? "claude"
+          if DiscourseAi::Completions::Endpoints::AwsBedrock.correctly_configured?(model)
+            return "aws_bedrock:#{model}"
+          else
+            return "anthropic:#{model}"
+          end
         end
+
+        raise "Unknown model #{model}"
       end
 
       private
@@ -234,6 +234,10 @@ Follow the provided writing composition instructions carefully and precisely ste
         parsed
           .css("a")
           .each do |a|
+            if a["class"] == "mention"
+              a.inner_html = a.inner_html.sub("@", "")
+              next
+            end
             href = a["href"]
             if href.present? && (href.start_with?("#{Discourse.base_url}") || href.start_with?("/"))
               begin
@@ -250,14 +254,6 @@ Follow the provided writing composition instructions carefully and precisely ste
                 # skip
               end
             end
-          end
-
-        parsed
-          .css("span.mention")
-          .each do |mention|
-            mention.replace(
-              "<a href='/u/#{mention.text.sub("@", "")}' class='mention'>#{mention.text}</a>",
-            )
           end
 
         parsed.to_html
