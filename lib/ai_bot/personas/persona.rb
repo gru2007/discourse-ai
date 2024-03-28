@@ -5,6 +5,14 @@ module DiscourseAi
     module Personas
       class Persona
         class << self
+          def vision_enabled
+            false
+          end
+
+          def vision_max_pixels
+            1_048_576
+          end
+
           def system_personas
             @system_personas ||= {
               Personas::General => -1,
@@ -67,6 +75,7 @@ module DiscourseAi
               Tools::DiscourseMetaSearch,
               Tools::GithubFileContent,
               Tools::GithubPullRequestDiff,
+              Tools::WebBrowser,
             ]
 
             tools << Tools::GithubSearchCode if SiteSetting.ai_bot_github_access_token.present?
@@ -126,6 +135,7 @@ module DiscourseAi
               post_id: context[:post_id],
             )
 
+          prompt.max_pixels = self.class.vision_max_pixels if self.class.vision_enabled
           prompt.tools = available_tools.map(&:signature) if available_tools
 
           prompt

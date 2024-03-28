@@ -1,5 +1,5 @@
 import Component from "@glimmer/component";
-import { tracked } from "@glimmer/tracking";
+import { cached, tracked } from "@glimmer/tracking";
 import { Input } from "@ember/component";
 import { on } from "@ember/modifier";
 import { action } from "@ember/object";
@@ -8,6 +8,7 @@ import didUpdate from "@ember/render-modifiers/modifiers/did-update";
 import { LinkTo } from "@ember/routing";
 import { later } from "@ember/runloop";
 import { inject as service } from "@ember/service";
+import BackButton from "discourse/components/back-button";
 import DButton from "discourse/components/d-button";
 import Textarea from "discourse/components/d-textarea";
 import DToggleSwitch from "discourse/components/d-toggle-switch";
@@ -16,6 +17,7 @@ import { popupAjaxError } from "discourse/lib/ajax-error";
 import Group from "discourse/models/group";
 import I18n from "discourse-i18n";
 import AdminUser from "admin/models/admin-user";
+import ComboBox from "select-kit/components/combo-box";
 import GroupChooser from "select-kit/components/group-chooser";
 import DTooltip from "float-kit/components/d-tooltip";
 import AiCommandSelector from "./ai-command-selector";
@@ -33,10 +35,36 @@ export default class PersonaEditor extends Component {
   @tracked editingModel = null;
   @tracked showDelete = false;
 
+  @tracked maxPixelsValue = null;
+
   @action
   updateModel() {
     this.editingModel = this.args.model.workingCopy();
     this.showDelete = !this.args.model.isNew && !this.args.model.system;
+    this.maxPixelsValue = this.findClosestPixelValue(
+      this.editingModel.vision_max_pixels
+    );
+  }
+
+  findClosestPixelValue(pixels) {
+    let value = "high";
+    this.maxPixelValues.forEach((info) => {
+      if (pixels === info.pixels) {
+        value = info.id;
+      }
+    });
+    return value;
+  }
+
+  @cached
+  get maxPixelValues() {
+    const l = (key) =>
+      I18n.t(`discourse_ai.ai_persona.vision_max_pixel_sizes.${key}`);
+    return [
+      { id: "low", name: l("low"), pixels: 65536 },
+      { id: "medium", name: l("medium"), pixels: 262144 },
+      { id: "high", name: l("high"), pixels: 1048576 },
+    ];
   }
 
   @action
@@ -58,7 +86,7 @@ export default class PersonaEditor extends Component {
       if (isNew) {
         this.args.personas.addObject(this.args.model);
         this.router.transitionTo(
-          "adminPlugins.discourse-ai.ai-personas.show",
+          "adminPlugins.show.discourse-ai.ai-personas.show",
           this.args.model
         );
       } else {
@@ -102,6 +130,16 @@ export default class PersonaEditor extends Component {
   }
 
   @action
+  onChangeMaxPixels(value) {
+    const entry = this.maxPixelValues.findBy("id", value);
+    if (!entry) {
+      return;
+    }
+    this.maxPixelsValue = value;
+    this.editingModel.vision_max_pixels = entry.pixels;
+  }
+
+  @action
   delete() {
     return this.dialog.confirm({
       message: I18n.t("discourse_ai.ai_persona.confirm_delete"),
@@ -109,7 +147,7 @@ export default class PersonaEditor extends Component {
         return this.args.model.destroyRecord().then(() => {
           this.args.personas.removeObject(this.args.model);
           this.router.transitionTo(
-            "adminPlugins.discourse-ai.ai-personas.index"
+            "adminPlugins.show.discourse-ai.ai-personas.index"
           );
         });
       },
@@ -134,6 +172,11 @@ export default class PersonaEditor extends Component {
   @action
   async toggleMentionable() {
     await this.toggleField("mentionable");
+  }
+
+  @action
+  async toggleVisionEnabled() {
+    await this.toggleField("vision_enabled");
   }
 
   @action
@@ -180,6 +223,10 @@ export default class PersonaEditor extends Component {
   }
 
   <template>
+    <BackButton
+      @route="adminPlugins.show.discourse-ai.ai-personas"
+      @label="discourse_ai.ai_persona.back"
+    />
     <form
       class="form-horizontal ai-persona-editor"
       {{didUpdate this.updateModel @model.id}}
@@ -220,6 +267,17 @@ export default class PersonaEditor extends Component {
           />
         </div>
       {{/if}}
+      <div class="control-group ai-persona-editor__vision_enabled">
+        <DToggleSwitch
+          @state={{@model.vision_enabled}}
+          @label="discourse_ai.ai_persona.vision_enabled"
+          {{on "click" this.toggleVisionEnabled}}
+        />
+        <DTooltip
+          @icon="question-circle"
+          @content={{I18n.t "discourse_ai.ai_persona.vision_enabled_help"}}
+        />
+      </div>
       <div class="control-group">
         <label>{{I18n.t "discourse_ai.ai_persona.name"}}</label>
         <Input
@@ -324,6 +382,16 @@ export default class PersonaEditor extends Component {
           @content={{I18n.t "discourse_ai.ai_persona.max_context_posts_help"}}
         />
       </div>
+      {{#if @model.vision_enabled}}
+        <div class="control-group">
+          <label>{{I18n.t "discourse_ai.ai_persona.vision_max_pixels"}}</label>
+          <ComboBox
+            @value={{this.maxPixelsValue}}
+            @content={{this.maxPixelValues}}
+            @onChange={{this.onChangeMaxPixels}}
+          />
+        </div>
+      {{/if}}
       {{#if this.showTemperature}}
         <div class="control-group">
           <label>{{I18n.t "discourse_ai.ai_persona.temperature"}}</label>
