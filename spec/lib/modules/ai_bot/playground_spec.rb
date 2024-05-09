@@ -131,7 +131,125 @@ RSpec.describe DiscourseAi::AiBot::Playground do
       persona
     end
 
-    context "with chat" do
+    context "with chat channels" do
+      fab!(:channel) { Fabricate(:chat_channel) }
+
+      fab!(:membership) do
+        Fabricate(:user_chat_channel_membership, user: user, chat_channel: channel)
+      end
+
+      let(:guardian) { Guardian.new(user) }
+
+      before do
+        SiteSetting.ai_bot_enabled = true
+        SiteSetting.chat_allowed_groups = "#{Group::AUTO_GROUPS[:trust_level_0]}"
+        Group.refresh_automatic_groups!
+        persona.update!(allow_chat: true, mentionable: true, default_llm: "anthropic:claude-3-opus")
+      end
+
+      it "should behave in a sane way when threading is enabled" do
+        channel.update!(threading_enabled: true)
+
+        message =
+          ChatSDK::Message.create(
+            channel_id: channel.id,
+            raw: "thread 1 message 1",
+            guardian: guardian,
+          )
+
+        message =
+          ChatSDK::Message.create(
+            channel_id: channel.id,
+            raw: "thread 1 message 2",
+            in_reply_to_id: message.id,
+            guardian: guardian,
+          )
+
+        thread = message.thread
+        thread.update!(title: "a magic thread")
+
+        message =
+          ChatSDK::Message.create(
+            channel_id: channel.id,
+            raw: "thread 2 message 1",
+            guardian: guardian,
+          )
+
+        message =
+          ChatSDK::Message.create(
+            channel_id: channel.id,
+            raw: "thread 2 message 2",
+            in_reply_to_id: message.id,
+            guardian: guardian,
+          )
+
+        prompts = nil
+        DiscourseAi::Completions::Llm.with_prepared_responses(["world"]) do |_, _, _prompts|
+          message =
+            ChatSDK::Message.create(
+              channel_id: channel.id,
+              raw: "Hello @#{persona.user.username}",
+              guardian: guardian,
+            )
+
+          prompts = _prompts
+        end
+
+        # don't start a thread cause it will get confusing
+        message.reload
+        expect(message.thread_id).to be_nil
+
+        prompt = prompts[0]
+
+        content = prompt.messages[1][:content]
+        # this is fragile by design, mainly so the example can be ultra clear
+        expected = (<<~TEXT).strip
+          You are replying inside a Discourse chat. Here is a summary of the conversation so far:
+          {{{
+          #{user.username}: (a magic thread)
+          thread 1 message 1
+          #{user.username}: thread 2 message 1
+          }}}
+
+          Your instructions:
+          #{user.username} said Hello
+        TEXT
+
+        expect(content.strip).to eq(expected)
+      end
+
+      it "should reply to a mention if properly enabled" do
+        prompts = nil
+
+        ChatSDK::Message.create(
+          channel_id: channel.id,
+          raw: "This is a story about stuff",
+          guardian: guardian,
+        )
+
+        DiscourseAi::Completions::Llm.with_prepared_responses(["world"]) do |_, _, _prompts|
+          ChatSDK::Message.create(
+            channel_id: channel.id,
+            raw: "Hello @#{persona.user.username}",
+            guardian: guardian,
+          )
+
+          prompts = _prompts
+        end
+
+        expect(prompts.length).to eq(1)
+        prompt = prompts[0]
+
+        expect(prompt.messages.length).to eq(2)
+        expect(prompt.messages[1][:content]).to include("story about stuff")
+        expect(prompt.messages[1][:content]).to include("Hello")
+
+        last_message = Chat::Message.where(chat_channel_id: channel.id).order("id desc").first
+        expect(last_message.message).to eq("world")
+      end
+    end
+
+    context "with chat dms" do
       fab!(:dm_channel) { Fabricate(:direct_message_channel, users: [user, persona.user]) }
 
       before do
@@ -142,6 +260,7 @@ RSpec.describe DiscourseAi::AiBot::Playground do
           mentionable: false,
           default_llm: "anthropic:claude-3-opus",
         )
+        SiteSetting.ai_bot_enabled = true
       end
 
       let(:guardian) { Guardian.new(user) }

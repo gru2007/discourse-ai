@@ -11,26 +11,38 @@ module DiscourseAi
 
       REQUIRE_TITLE_UPDATE = "discourse-ai-title-update"
 
-      def self.schedule_chat_reply(message, channel, user, context)
+      def self.find_chat_persona(message, channel, user)
         if channel.direct_message_channel?
-          allowed_user_ids = channel.allowed_user_ids
-
-          return if AiPersona.allowed_chat.any? { |m| m[:user_id] == user.id }
-
-          persona =
-            AiPersona.allowed_chat.find do |p|
-              p[:user_id].in?(allowed_user_ids) && (user.group_ids & p[:allowed_group_ids])
+          AiPersona.allowed_chat.find do |p|
+            p[:user_id].in?(channel.allowed_user_ids) && (user.group_ids & p[:allowed_group_ids])
+          end
+        else
+          # let's defer on the parse if there is no @ in the message
+          if message.message.include?("@")
+            mentions = message.parsed_mentions.parsed_direct_mentions
+            if mentions.present?
+              AiPersona.allowed_chat.find do |p|
+                p[:username].in?(mentions) && (user.group_ids & p[:allowed_group_ids])
+              end
             end
-
-          if persona
-            ::Jobs.enqueue(
-              :create_ai_chat_reply,
-              channel_id: channel.id,
-              message_id: message.id,
-              persona_id: persona[:id],
-            )
           end
         end
+      end
+
+      def self.schedule_chat_reply(message, channel, user, context)
+        return if !SiteSetting.ai_bot_enabled
+        return if AiPersona.allowed_chat.blank?
+        return if AiPersona.allowed_chat.any? { |m| m[:user_id] == user.id }
+
+        persona = find_chat_persona(message, channel, user)
+        return if !persona
+
+        ::Jobs.enqueue(
+          :create_ai_chat_reply,
+          channel_id: channel.id,
+          message_id: message.id,
+          persona_id: persona[:id],
+        )
       end
 
       def self.is_bot_user_id?(user_id)
@@ -208,21 +220,38 @@ module DiscourseAi
 
       def chat_context(message, channel, persona_user)
         has_vision = bot.persona.class.vision_enabled
+        include_thread_titles = !channel.direct_message_channel? && !message.thread_id
 
-        if !message.thread_id
-          hash = { type: :user, content: message.message }
-          hash[:upload_ids] = message.uploads.map(&:id) if has_vision && message.uploads.present?
-          return [hash]
+        current_id = message.id
+        if !channel.direct_message_channel?
+          # we are interacting via mentions ... strip mention
+          instruction_message = message.message.gsub(/@#{bot.bot_user.username}/i, "").strip
         end
+
+        messages = nil
 
         max_messages = 40
         if bot.persona.class.respond_to?(:max_context_posts)
           max_messages = bot.persona.class.max_context_posts || 40
         end
 
-        # I would like to use a guardian  however membership for
-        # persona_user is far in future
-        thread_messages =
+        if !message.thread_id && channel.direct_message_channel?
+          messages = [message]
+        elsif !channel.direct_message_channel? && !message.thread_id
+          messages =
+            Chat::Message
+              .joins("left join chat_threads on chat_threads.id = chat_messages.thread_id")
+              .where(chat_channel_id: channel.id)
+              .where(
+                "chat_messages.thread_id IS NULL OR chat_threads.original_message_id = chat_messages.id",
+              )
+              .order(id: :desc)
+              .limit(max_messages)
+              .to_a
+              .reverse
+        end
+
+        messages ||=
           ChatSDK::Thread.last_messages(
             thread_id: message.thread_id,
             guardian: Discourse.system_user.guardian,
@@ -231,22 +260,31 @@ module DiscourseAi
 
         builder = DiscourseAi::Completions::PromptMessagesBuilder.new
 
-        thread_messages.each do |m|
+        messages.each do |m|
+          # restore stripped message
+          m.message = instruction_message if m.id == current_id && instruction_message
+
           if available_bot_user_ids.include?(m.user_id)
             builder.push(type: :model, content: m.message)
           else
             upload_ids = nil
             upload_ids = m.uploads.map(&:id) if has_vision && m.uploads.present?
+            mapped_message = m.message
+
+            thread_title = nil
+            thread_title = m.thread&.title if include_thread_titles && m.thread_id
+            mapped_message = "(#{thread_title})\n#{m.message}" if thread_title
+
             builder.push(
               type: :user,
-              content: m.message,
+              content: mapped_message,
               name: m.user.username,
               upload_ids: upload_ids,
             )
           end
         end
 
-        builder.to_a(limit: max_messages)
+        builder.to_a(limit: max_messages, style: channel.direct_message_channel? ? :default : :chat)
       end
 
       def reply_to_chat_message(message, channel)
@@ -265,6 +303,9 @@ module DiscourseAi
         reply = nil
         guardian = Guardian.new(persona_user)
 
+        force_thread = message.thread_id.nil? && channel.direct_message_channel?
+        in_reply_to_id = channel.direct_message_channel? ? message.id : nil
+
         new_prompts =
           bot.reply(context) do |partial, cancel, placeholder|
             if !reply
@@ -276,8 +317,9 @@ module DiscourseAi
                   thread_id: message.thread_id,
                   channel_id: channel.id,
                   guardian: guardian,
-                  in_reply_to_id: message.id,
-                  force_thread: message.thread_id.nil?,
+                  in_reply_to_id: in_reply_to_id,
+                  force_thread: force_thread,
+                  enforce_membership: !channel.direct_message_channel?,
                 )
               ChatSDK::Message.start_stream(message_id: reply.id, guardian: guardian)
             else
@@ -331,6 +373,7 @@ module DiscourseAi
           )
         context[:post_id] = post.id
         context[:topic_id] = post.topic_id
+        context[:private_message] = post.topic.private_message?
 
         reply_user = bot.bot_user
         if bot.persona.class.respond_to?(:user_id)
