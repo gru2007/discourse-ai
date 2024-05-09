@@ -41,6 +41,32 @@ RSpec.describe AiPersona do
     expect(user.id).to be <= AiPersona::FIRST_PERSONA_USER_ID
   end
 
+  it "removes all rag embeddings when rag params change" do
+    persona =
+      AiPersona.create!(
+        name: "test",
+        description: "test",
+        system_prompt: "test",
+        commands: [],
+        allowed_group_ids: [],
+        rag_chunk_tokens: 10,
+        rag_chunk_overlap_tokens: 5,
+      )
+
+    id =
+      RagDocumentFragment.create!(
+        ai_persona: persona,
+        fragment: "test",
+        fragment_number: 1,
+        upload: Fabricate(:upload),
+      ).id
+
+    persona.rag_chunk_tokens = 20
+    persona.save!
+
+    expect(RagDocumentFragment.exists?(id)).to eq(false)
+  end
+
   it "defines singleton methods on system persona classes" do
     forum_helper = AiPersona.find_by(name: "Forum Helper")
     forum_helper.update!(
@@ -85,6 +111,23 @@ RSpec.describe AiPersona do
     expect(klass.mentionable).to eq(true)
     expect(klass.default_llm).to eq("anthropic:claude-2")
     expect(klass.max_context_posts).to eq(3)
+  end
+
+  it "does not allow setting allow_chat without a default_llm" do
+    persona =
+      AiPersona.create(
+        name: "test",
+        description: "test",
+        system_prompt: "test",
+        allowed_group_ids: [],
+        default_llm: nil,
+        allow_chat: true,
+      )
+
+    expect(persona.valid?).to eq(false)
+    expect(persona.errors[:default_llm].first).to eq(
+      I18n.t("discourse_ai.ai_bot.personas.default_llm_required"),
+    )
   end
 
   it "does not leak caches between sites" do

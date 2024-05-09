@@ -17,6 +17,7 @@ module DiscourseAi
       CLAUDE_3_OPUS_ID = -117
       CLAUDE_3_SONNET_ID = -118
       CLAUDE_3_HAIKU_ID = -119
+      COHERE_COMMAND_R_PLUS = -120
 
       BOTS = [
         [GPT4_ID, "gpt4_bot", "gpt-4"],
@@ -24,11 +25,12 @@ module DiscourseAi
         [CLAUDE_V2_ID, "claude_bot", "claude-2"],
         [GPT4_TURBO_ID, "gpt4t_bot", "gpt-4-turbo"],
         [MIXTRAL_ID, "mixtral_bot", "mixtral-8x7B-Instruct-V0.1"],
-        [GEMINI_ID, "gemini_bot", "gemini-pro"],
+        [GEMINI_ID, "gemini_bot", "gemini-1.5-pro"],
         [FAKE_ID, "fake_bot", "fake"],
         [CLAUDE_3_OPUS_ID, "claude_3_opus_bot", "claude-3-opus"],
         [CLAUDE_3_SONNET_ID, "claude_3_sonnet_bot", "claude-3-sonnet"],
         [CLAUDE_3_HAIKU_ID, "claude_3_haiku_bot", "claude-3-haiku"],
+        [COHERE_COMMAND_R_PLUS, "cohere_command_bot", "cohere-command-r-plus"],
       ]
 
       BOT_USER_IDS = BOTS.map(&:first)
@@ -57,7 +59,7 @@ module DiscourseAi
           CLAUDE_V2_ID
         in "mixtral-8x7B-Instruct-V0.1"
           MIXTRAL_ID
-        in "gemini-pro"
+        in "gemini-1.5-pro"
           GEMINI_ID
         in "fake"
           FAKE_ID
@@ -67,6 +69,8 @@ module DiscourseAi
           CLAUDE_3_SONNET_ID
         in "claude-3-haiku"
           CLAUDE_3_HAIKU_ID
+        in "cohere-command-r-plus"
+          COHERE_COMMAND_R_PLUS
         else
           nil
         end
@@ -95,6 +99,15 @@ module DiscourseAi
       end
 
       def inject_into(plugin)
+        plugin.register_modifier(:chat_allowed_bot_user_ids) do |user_ids, guardian|
+          if guardian.user
+            mentionables = AiPersona.mentionables(user: guardian.user)
+            allowed_bot_ids = mentionables.map { |mentionable| mentionable[:user_id] }
+            user_ids.concat(allowed_bot_ids)
+          end
+          user_ids
+        end
+
         plugin.on(:site_setting_changed) do |name, _old_value, _new_value|
           if name == :ai_bot_enabled_chat_bots || name == :ai_bot_enabled ||
                name == :discourse_ai_enabled
@@ -137,6 +150,16 @@ module DiscourseAi
 
         plugin.add_to_serializer(
           :current_user,
+          :can_debug_ai_bot_conversations,
+          include_condition: -> do
+            SiteSetting.ai_bot_enabled && scope.authenticated? &&
+              SiteSetting.ai_bot_debugging_allowed_groups.present? &&
+              scope.user.in_any_groups?(SiteSetting.ai_bot_debugging_allowed_groups_map)
+          end,
+        ) { true }
+
+        plugin.add_to_serializer(
+          :current_user,
           :ai_enabled_chat_bots,
           include_condition: -> do
             SiteSetting.ai_bot_enabled && scope.authenticated? &&
@@ -159,11 +182,15 @@ module DiscourseAi
           SQL
 
           bots.each { |hash| hash["model_name"] = model_map[hash["id"]] }
-          mentionables = AiPersona.mentionables(user: scope.user)
-          if mentionables.present?
+          persona_users = AiPersona.persona_users(user: scope.user)
+          if persona_users.present?
             bots.concat(
-              mentionables.map do |mentionable|
-                { "id" => mentionable[:user_id], "username" => mentionable[:username] }
+              persona_users.map do |persona_user|
+                {
+                  "id" => persona_user[:user_id],
+                  "username" => persona_user[:username],
+                  "mentionable" => persona_user[:mentionable],
+                }
               end,
             )
           end
@@ -201,18 +228,27 @@ module DiscourseAi
 
         plugin.on(:post_created) { |post| DiscourseAi::AiBot::Playground.schedule_reply(post) }
 
+        plugin.on(:chat_message_created) do |chat_message, channel, user, context|
+          DiscourseAi::AiBot::Playground.schedule_chat_reply(chat_message, channel, user, context)
+        end
+
         if plugin.respond_to?(:register_editable_topic_custom_field)
           plugin.register_editable_topic_custom_field(:ai_persona_id)
         end
 
         plugin.on(:site_setting_changed) do |name, old_value, new_value|
-          if name == "ai_embeddings_model" && SiteSetting.ai_embeddings_enabled? &&
+          if name == :ai_embeddings_model && SiteSetting.ai_embeddings_enabled? &&
                new_value != old_value
-            RagDocumentFragment.find_in_batches do |batch|
-              batch.each_slice(100) do |fragments|
-                Jobs.enqueue(:generate_rag_embeddings, fragment_ids: fragments.map(&:id))
+            RagDocumentFragment.delete_all
+            UploadReference
+              .where(target: AiPersona.all)
+              .each do |ref|
+                Jobs.enqueue(
+                  :digest_rag_upload,
+                  ai_persona_id: ref.target_id,
+                  upload_id: ref.upload_id,
+                )
               end
-            end
           end
         end
       end

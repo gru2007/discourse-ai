@@ -23,7 +23,13 @@ module DiscourseAi
           # However, since they use the same URL/key settings, there's no reason to duplicate them.
           @models_by_provider ||=
             {
-              aws_bedrock: %w[claude-instant-1 claude-2 claude-3-haiku claude-3-sonnet],
+              aws_bedrock: %w[
+                claude-instant-1
+                claude-2
+                claude-3-haiku
+                claude-3-sonnet
+                claude-3-opus
+              ],
               anthropic: %w[claude-instant-1 claude-2 claude-3-haiku claude-3-sonnet claude-3-opus],
               vllm: %w[
                 mistralai/Mixtral-8x7B-Instruct-v0.1
@@ -41,6 +47,7 @@ module DiscourseAi
                 Llama2-*-chat-hf
                 Llama2-chat-hf
               ],
+              cohere: %w[command-light command command-r command-r-plus],
               open_ai: %w[
                 gpt-3.5-turbo-0125
                 gpt-4
@@ -49,7 +56,7 @@ module DiscourseAi
                 gpt-4-turbo
                 gpt-4-vision-preview
               ],
-              google: %w[gemini-pro],
+              google: %w[gemini-pro gemini-1.5-pro],
             }.tap { |h| h[:fake] = ["fake"] if Rails.env.test? || Rails.env.development? }
         end
 
@@ -93,23 +100,24 @@ module DiscourseAi
             if @canned_llm && @canned_llm != model_name
               raise "Invalid call LLM call, expected #{@canned_llm} but got #{model_name}"
             end
-            return new(dialect_klass, @canned_response, model_name)
+            return new(dialect_klass, nil, model_name, gateway: @canned_response)
           end
 
-          gateway =
+          gateway_klass =
             DiscourseAi::Completions::Endpoints::Base.endpoint_for(
               provider_name,
               model_name_without_prov,
-            ).new(model_name_without_prov, dialect_klass.tokenizer)
+            )
 
-          new(dialect_klass, gateway, model_name_without_prov)
+          new(dialect_klass, gateway_klass, model_name_without_prov)
         end
       end
 
-      def initialize(dialect_klass, gateway, model_name)
+      def initialize(dialect_klass, gateway_klass, model_name, gateway: nil)
         @dialect_klass = dialect_klass
-        @gateway = gateway
+        @gateway_klass = gateway_klass
         @model_name = model_name
+        @gateway = gateway
       end
 
       delegate :tokenizer, to: :dialect_klass
@@ -167,6 +175,7 @@ module DiscourseAi
 
         model_params.keys.each { |key| model_params.delete(key) if model_params[key].nil? }
 
+        gateway = @gateway || gateway_klass.new(model_name, dialect_klass.tokenizer)
         dialect = dialect_klass.new(prompt, model_name, opts: model_params)
         gateway.perform_completion!(dialect, user, model_params, &partial_read_blk)
       end
@@ -179,7 +188,7 @@ module DiscourseAi
 
       private
 
-      attr_reader :dialect_klass, :gateway
+      attr_reader :dialect_klass, :gateway_klass
     end
   end
 end
